@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.mod
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt reports these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: |
+          for target in linux/amd64 linux/arm64 linux/386 linux/arm \
+                        windows/amd64 windows/arm64 windows/386 darwin/amd64 darwin/arm64; do
+            echo "== $target"
+            GOOS=${target%/*} GOARCH=${target#*/} go vet ./...
+          done
+
+      - name: Test
+        run: go test ./...
+
+      # usbfs's structs and ioctl numbers differ on a 32-bit kernel; the runner
+      # runs 386 binaries natively.
+      - name: Test as 32-bit
+        run: GOARCH=386 go test ./...
+
+      - name: Build
+        run: |
+          for target in linux/amd64 linux/arm64 linux/386 linux/arm \
+                        windows/amd64 windows/arm64 windows/386 darwin/amd64 darwin/arm64; do
+            CGO_ENABLED=0 GOARM=7 GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/fmwave
+          done

@@ -1,0 +1,125 @@
+version: 2
+
+project_name: fmwave
+
+before:
+  hooks:
+    - go test ./...
+
+# macOS has its completion callback in assembly for amd64 and arm64 only.
+builds:
+  - id: fmwave-linux
+    main: ./cmd/fmwave
+    binary: fmwave
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - "386"
+      - arm
+    goarm:
+      - "7"
+    flags:
+      - "-trimpath"
+    ldflags:
+      - -s -w -X main.version=v{{.Version}}
+      - -s -w -X main.commit={{.Commit}}
+      - -s -w -X main.date={{.Date}}
+  - id: fmwave-darwin
+    main: ./cmd/fmwave
+    binary: fmwave
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - "-trimpath"
+    ldflags:
+      - -s -w -X main.version=v{{.Version}}
+      - -s -w -X main.commit={{.Commit}}
+      - -s -w -X main.date={{.Date}}
+  - id: fmwave-windows
+    main: ./cmd/fmwave
+    binary: fmwave
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+    goarch:
+      - amd64
+      - arm64
+      - "386"
+    flags:
+      - "-trimpath"
+    ldflags:
+      - -s -w -X main.version=v{{.Version}}
+      - -s -w -X main.commit={{.Commit}}
+      - -s -w -X main.date={{.Date}}
+
+archives:
+  - id: unix
+    ids:
+      - fmwave-linux
+      - fmwave-darwin
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    formats: [tar.gz]
+    files:
+      - COPYING
+      - README.md
+  # The WinUSB INF and the scripts that install it travel with the Windows build.
+  - id: windows
+    ids:
+      - fmwave-windows
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    formats: [zip]
+    files:
+      - COPYING
+      - README.md
+      - driver/windows/*
+
+nfpms:
+  - file_name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+    ids:
+      - fmwave-linux
+    maintainer: Till0196
+    description: FM radio receiver for the MyGica S270 and PLEX PX-S1UD USB sticks
+    license: "GPL-2.0-or-later"
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    section: sound
+    contents:
+      - src: ./COPYING
+        dst: /usr/share/doc/fmwave/copyright
+        file_info:
+          mode: 0644
+
+checksum:
+  name_template: "checksums.sha256"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+sboms:
+  - artifacts: archive

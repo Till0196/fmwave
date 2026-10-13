@@ -1,0 +1,6 @@
+*.wav
+*.raw
+/fmwave
+/fmwave.exe
+firmware/
+/dist/

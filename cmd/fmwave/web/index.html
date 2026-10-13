@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fmwave</title>
+<style>
+  :root {
+    --bg: #101317; --panel: #181c22; --edge: #262c35; --text: #e8ecf1; --dim: #8a94a3;
+    --accent: #4fb3ff; --good: #3ddc84; --warn: #f5b942; --bad: #5a6270; --meter-lo: #2b6cb0; --meter-hi: #3ddc84;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f3f5f8; --panel: #ffffff; --edge: #dde2e9; --text: #16202c; --dim: #5d6878;
+      --accent: #0a74d6; --good: #13a15a; --warn: #b7791f; --bad: #aab2bf; --meter-lo: #7fb3e6; --meter-hi: #13a15a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 20px 16px 40px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .04em; }
+  header small { color: var(--dim); }
+  .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
+  .dial { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .freq { font-size: 56px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1; }
+  .freq small { font-size: 18px; color: var(--dim); margin-left: 6px; font-weight: 500; }
+  .lamp { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--edge); font-weight: 600; font-size: 13px; color: var(--dim); }
+  .lamp i { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+  .lamp.on { color: var(--good); border-color: var(--good); }
+  .lamp.on i { background: var(--good); box-shadow: 0 0 8px var(--good); }
+  .meter { margin-top: 16px; }
+  .meter .bar { height: 10px; border-radius: 5px; background: var(--edge); overflow: hidden; }
+  .meter .fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--meter-lo), var(--meter-hi)); transition: width .3s; }
+  .meter .legend { display: flex; justify-content: space-between; color: var(--dim); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--edge);
+    border-radius: 8px; padding: 8px 14px; cursor: pointer; min-width: 44px; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; min-width: 96px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .tuner input[type=range] { margin: 14px 0 4px; }
+  .scale { display: flex; justify-content: space-between; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .stations { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .stations button { font-variant-numeric: tabular-nums; }
+  .stations button.here { border-color: var(--accent); color: var(--accent); }
+  .stations .none { color: var(--dim); font-size: 13px; }
+  canvas { width: 100%; height: 110px; display: block; margin-top: 12px; cursor: crosshair; border-radius: 6px; }
+  .progress { height: 4px; background: var(--edge); border-radius: 2px; overflow: hidden; margin-top: 10px; visibility: hidden; }
+  .progress div { height: 100%; width: 0; background: var(--accent); }
+  .play { display: flex; gap: 14px; align-items: center; }
+  .play label { color: var(--dim); font-size: 13px; white-space: nowrap; }
+  .play input { flex: 1; }
+  .note { color: var(--dim); font-size: 12px; margin-top: 8px; min-height: 18px; }
+  h2 { font-size: 13px; color: var(--dim); font-weight: 600; margin: 0 0 8px; letter-spacing: .05em; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>fmwave</h1><small id="rate">—</small></header>
+
+  <section class="panel">
+    <div class="dial">
+      <div class="freq"><span id="mhz">--.-</span><small>MHz</small></div>
+      <span class="lamp" id="lamp"><i></i><span id="lampText">NO LOCK</span></span>
+    </div>
+    <div class="meter">
+      <div class="bar"><div class="fill" id="fill"></div></div>
+      <div class="legend"><span>-100 dBm</span><span id="dbm">— dBm</span><span>-40 dBm</span></div>
+    </div>
+  </section>
+
+  <section class="panel tuner">
+    <div class="row">
+      <button id="prevStation" title="前の局">⏮</button>
+      <button id="down" title="-0.1 MHz（←）">−0.1</button>
+      <button id="up" title="+0.1 MHz（→）">+0.1</button>
+      <button id="nextStation" title="次の局">⏭</button>
+    </div>
+    <input type="range" id="slider" min="76" max="95" step="0.1" value="80">
+    <div class="scale"><span>76</span><span>80</span><span>85</span><span>90</span><span>95</span></div>
+  </section>
+
+  <section class="panel">
+    <div class="row" style="justify-content: space-between">
+      <h2 style="margin: 0">局</h2>
+      <button id="scan">帯を探す</button>
+    </div>
+    <div class="progress" id="progress"><div id="progressFill"></div></div>
+    <canvas id="spectrum" width="680" height="110"></canvas>
+    <div class="stations" id="stations"><span class="none">「帯を探す」で、受かる局をここに並べます。</span></div>
+  </section>
+
+  <section class="panel">
+    <div class="play">
+      <button class="primary" id="play">▶ 再生</button>
+      <label for="volume">音量</label>
+      <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8">
+    </div>
+    <div class="note" id="note"></div>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let current = 80.0, stationsFound = [], sweep = [], scanning = false;
+
+// ---- 状態 ----------------------------------------------------------------
+async function poll() {
+  try {
+    const s = await (await fetch("/status", { cache: "no-store" })).json();
+    current = s.mhz;
+    $("mhz").textContent = s.mhz.toFixed(1);
+    if (document.activeElement !== $("slider")) $("slider").value = s.mhz;
+    const locked = s.measured && s.lock !== 0;
+    $("lamp").classList.toggle("on", locked);
+    $("lampText").textContent = locked ? "LOCK" : "NO LOCK";
+    if (s.measured) {
+      $("dbm").textContent = s.dbm + " dBm";
+      $("fill").style.width = Math.max(0, Math.min(100, (s.dbm + 100) / 60 * 100)) + "%";
+    }
+    $("rate").textContent = s.scanning ? "探しています…" : (s.rate / 1000).toFixed(0) + " kB/s";
+    scanning = s.scanning;
+    $("scan").disabled = scanning;
+    $("progress").style.visibility = scanning ? "visible" : "hidden";
+    $("progressFill").style.width = (s.scanOf ? s.scanDone / s.scanOf * 100 : 0) + "%";
+    sweep = s.sweep || [];
+    stationsFound = s.stations || [];
+    drawStations();
+    drawSpectrum();
+    $("note").textContent = s.failure ? "エラー: " + s.failure : $("note").dataset.say || "";
+  } catch (e) {
+    $("rate").textContent = "つながりません";
+  }
+}
+setInterval(poll, 500);
+poll();
+
+// ---- 選局 ----------------------------------------------------------------
+let pending = null;
+async function tuneTo(mhz) {
+  mhz = Math.round(Math.min(95, Math.max(76, mhz)) * 10) / 10;
+  current = mhz;
+  $("mhz").textContent = mhz.toFixed(1);
+  const body = new URLSearchParams({ mhz: mhz.toFixed(1) });
+  const r = await fetch("/tune", { method: "POST", body });
+  if (!r.ok) say("選局できません: " + (await r.text()));
+  drawStations(); drawSpectrum();
+}
+function tuneSoon(mhz) {
+  clearTimeout(pending);
+  $("mhz").textContent = (+mhz).toFixed(1);
+  pending = setTimeout(() => tuneTo(+mhz), 120);
+}
+$("down").onclick = () => tuneTo(current - 0.1);
+$("up").onclick = () => tuneTo(current + 0.1);
+$("slider").oninput = (e) => tuneSoon(e.target.value);
+function hop(direction) {
+  if (!stationsFound.length) return say("先に「帯を探す」を押してください");
+  const list = stationsFound.map((s) => s.mhz);
+  const next = direction > 0 ? list.find((m) => m > current + 0.05) ?? list[0]
+                             : [...list].reverse().find((m) => m < current - 0.05) ?? list[list.length - 1];
+  tuneTo(next);
+}
+$("prevStation").onclick = () => hop(-1);
+$("nextStation").onclick = () => hop(1);
+$("scan").onclick = async () => { await fetch("/scan", { method: "POST" }); say("76〜95 MHz を測っています（2 分ほど）"); };
+
+function drawStations() {
+  const box = $("stations");
+  if (!stationsFound.length) return;
+  box.replaceChildren(...stationsFound.map((s) => {
+    const b = document.createElement("button");
+    b.textContent = s.mhz.toFixed(1) + " MHz";
+    b.title = s.dbm + " dBm";
+    b.classList.toggle("here", Math.abs(s.mhz - current) < 0.05);
+    b.onclick = () => tuneTo(s.mhz);
+    return b;
+  }));
+}
+
+function drawSpectrum() {
+  const c = $("spectrum"), g = c.getContext("2d");
+  const w = c.width = c.clientWidth * devicePixelRatio, h = c.height = 110 * devicePixelRatio;
+  const css = getComputedStyle(document.documentElement);
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = css.getPropertyValue("--edge");
+  g.fillRect(0, h - 1, w, 1);
+  const x = (mhz) => (mhz - 76) / 19 * w;
+  const y = (dbm) => h - Math.max(0, Math.min(1, (dbm + 100) / 60)) * (h - 8);
+  if (sweep.length) {
+    g.fillStyle = css.getPropertyValue("--meter-lo");
+    const bw = Math.max(1, w / 191 - 1);
+    for (const r of sweep) if (r.ok) g.fillRect(x(r.mhz) - bw / 2, y(r.dbm), bw, h - y(r.dbm));
+    g.fillStyle = css.getPropertyValue("--good");
+    for (const s of stationsFound) g.fillRect(x(s.mhz) - 1.5 * devicePixelRatio, y(s.dbm), 3 * devicePixelRatio, h - y(s.dbm));
+  } else {
+    g.fillStyle = css.getPropertyValue("--dim");
+    g.font = 12 * devicePixelRatio + "px system-ui";
+    g.fillText("まだ探していません", 8 * devicePixelRatio, h / 2);
+  }
+  g.fillStyle = css.getPropertyValue("--accent");
+  g.fillRect(x(current) - devicePixelRatio, 0, 2 * devicePixelRatio, h);
+}
+$("spectrum").onclick = (e) => {
+  const rect = e.target.getBoundingClientRect();
+  tuneTo(76 + (e.clientX - rect.left) / rect.width * 19);
+};
+addEventListener("resize", drawSpectrum);
+
+// ---- 音 ------------------------------------------------------------------
+// /pcm は 44.1 kHz・16 bit・ステレオを流し続ける。塊を 0.1 秒ぶんずつ貯めて、
+// 途切れないように少し先へ積んでいく。
+let audio = null, gain = null, playing = false, abort = null, next = 0;
+const RATE = 44100, CHUNK_FRAMES = 4410;
+let carry = new Uint8Array(0);
+
+function volume() { if (gain) gain.gain.value = +$("volume").value; }
+try { const v = localStorage.getItem("fmwave.volume"); if (v !== null) $("volume").value = v; } catch (e) {}
+$("volume").oninput = () => { volume(); try { localStorage.setItem("fmwave.volume", $("volume").value); } catch (e) {} };
+
+function feed(bytes) {
+  const joined = new Uint8Array(carry.length + bytes.length);
+  joined.set(carry); joined.set(bytes, carry.length);
+  let offset = 0;
+  while (joined.length - offset >= CHUNK_FRAMES * 4) {
+    schedule(new DataView(joined.buffer, offset, CHUNK_FRAMES * 4));
+    offset += CHUNK_FRAMES * 4;
+  }
+  carry = joined.slice(offset);
+}
+function schedule(view) {
+  const frames = view.byteLength / 4;
+  const buffer = audio.createBuffer(2, frames, RATE);
+  const left = buffer.getChannelData(0), right = buffer.getChannelData(1);
+  for (let i = 0; i < frames; i++) {
+    left[i] = view.getInt16(i * 4, true) / 32768;
+    right[i] = view.getInt16(i * 4 + 2, true) / 32768;
+  }
+  const source = audio.createBufferSource();
+  source.buffer = buffer;
+  source.connect(gain);
+  const now = audio.currentTime;
+  // 遅れたら積み直し、溜まりすぎたら捨てて追いつく。
+  if (next < now + 0.05 || next > now + 1.0) next = now + 0.3;
+  source.start(next);
+  next += buffer.duration;
+}
+async function play() {
+  audio = audio || new AudioContext({ sampleRate: RATE });
+  await audio.resume();
+  if (!gain) { gain = audio.createGain(); gain.connect(audio.destination); }
+  volume();
+  playing = true; next = 0; carry = new Uint8Array(0);
+  $("play").textContent = "■ 停止";
+  abort = new AbortController();
+  try {
+    const response = await fetch("/pcm", { signal: abort.signal, cache: "no-store" });
+    const reader = response.body.getReader();
+    while (playing) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      feed(value);
+    }
+  } catch (e) {
+    if (playing) say("音が切れました: " + e.message);
+  }
+  stop();
+}
+function stop() {
+  playing = false;
+  if (abort) abort.abort();
+  $("play").textContent = "▶ 再生";
+}
+$("play").onclick = () => (playing ? stop() : play());
+
+// ---- キー ----------------------------------------------------------------
+addEventListener("keydown", (e) => {
+  // 入力欄とスライダーは自分でキーを使う（スライダーは oninput で選局する）。
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "ArrowLeft") { e.preventDefault(); tuneTo(current - 0.1); }
+  if (e.key === "ArrowRight") { e.preventDefault(); tuneTo(current + 0.1); }
+  if (e.key === " ") { e.preventDefault(); playing ? stop() : play(); }
+});
+
+function say(text) { $("note").dataset.say = text; $("note").textContent = text; setTimeout(() => { if ($("note").dataset.say === text) { $("note").dataset.say = ""; } }, 6000); }
+</script>
+</body>
+</html>
